@@ -43,6 +43,35 @@ ages <- subset.df %>%
 hist(subset.df$age)
 hist(subset.df$duration_months)
 
+## Creating binary variable for improvement at 52 weeks- 
+##will need write a function if no 52 week time piont available- to searh previos time 26, 12 or 6 for a value 
+
+improved.last <- function(x) if(x <= 4) 0 else 1  ##does R include NA in this data count?
+
+improved.52 <- sapply(subset.df$time52lpt,improved.last)
+
+## Should look at Summary mean scores first
+
+##Developing the propensity scores
+
+subset.ps <- glm(prponly_num ~ duration_m + gender_num + age + time0pda + time0pse + time0, ##is time0 the site specific combined?
+                 family = binomial(), data = subset.df)
+summary(subset.ps)
+
+prs_df <- data.frame(pr_score = predict(subset.ps, type = "response"),
+                     prponly_num = subset.df$model$prponly_num)
+head(prs_df)
+
+labs <- paste("Actual PRP Type:", c("LR-PRP", "LP-PRP"))
+prs_df %>%
+  mutate(prponly_num = ifelse(prponly == 1, labs[1], labs[2])) %>%
+  ggplot(aes(x = pr_score)) +
+  geom_histogram(color = "white") +
+  facet_wrap(~prponly_num) +
+  xlab("Probability of getting LR-PRP injection") +
+  theme_bw()
+
+##don't think we can really match by ps for this analysis bc of the imbalance in groups
 
 
 
