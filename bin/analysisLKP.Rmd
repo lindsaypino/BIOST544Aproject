@@ -1,31 +1,42 @@
+---
+title: "analysisLKP.Rmd"
+author: "LK Pino"
+date: "March 5, 2017"
+output: html_document
+---
+
+Hi guys
+
+I'm moving my *.R code into *.Rmd so that I can make comments for my write up, and because the code is getting a little long and I wanted to organize!
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 options(digits = 3) ## Formats output to 3 digits
 library(gtools)
 library(ggplot2)
 library(dplyr)
 library(data.table)
-
-
-
-#
-# CREATION OF DATAFRAME AND PREPROCESSING
-#
+library(reshape2)
+source("http://bioconductor.org/biocLite.R")  # for timecourse analysis
+biocLite("edge")  # for timecourse analysis
+library(edge)  # for timecourse analysis
 
 dir <- getwd()
 setwd(dir)
 all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+```
 
+
+
+```{r dataframe_readin}
 ## Subset for the variables I know
 cols <- colnames(all.df)
 keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
 subset.df <- all.df[, keepcols]
-
 # note: missing prptype for pt AGFT199 -- discarded in excel
+```
 
-
-#
-# DESCRIPTIVE STATISTICS
-#
-
+```{r summarystats_meta}
 ## Missingness by feature, ie how many N/As per column
 apply(subset.df, 2, function(x){sum(is.na(x))}) 
 complete <- subset.df %>% complete.cases()
@@ -45,28 +56,29 @@ ages <- subset.df %>%
 hist(subset.df$age)
 hist(subset.df$duration_months)
 
+```
 
+```{r cleaning_codeprptype}
 ## code prptype as a factor
 subset.df$prptype <- as.character(subset.df$prptype)
 subset.df$prpcode[subset.df$prptype == "cascade"] <- 1
 subset.df$prpcode[subset.df$prptype == "biomet"] <- 2
 subset.df$prpcode[subset.df$prptype == "abi"] <- 0
 subset.df$prpcode <- as.factor(subset.df$prpcode)
+```
 
+```{r summarystats_notlikert}
 ## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
-
 timecols <- c('time0','time6','time12', 'time26', 'time52')
 time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
 
 ## plot the trends over time for each patient (the other scale, not the likert scale)
-
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
 ggplot(meltedSubset, aes(x=variable, y=value, factor(prpcode))) +
   stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
 
 ## plot subset of the patients trend over time (whatever subset you want)
-
 plot_trend <- function(slice){
   ggplot(subset(meltedSubset, patientid %in% slice), 
          aes(x=variable,y=value)) +
@@ -76,23 +88,21 @@ plot_trend <- function(slice){
 
 plot_trend(time.prptype.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 
-
 ## boxplot of trends
 ggplot(meltedSubset, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
+```
 
-
-## above with likert
+```{r summarystats_likert}
+## same as above but with the likert
 likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
 time.likert.df <- subset.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
-
 
 ggplot(meltedLikert, aes(x=variable, y=value, factor(prpcode))) +
   stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
 
 ## [LIKERT] plot subset of the patients trend over time (whatever subset you want)
-
 plot_trend <- function(slice){
   ggplot(subset(meltedLikert, patientid %in% slice), 
          aes(x=variable,y=value)) +
@@ -102,18 +112,12 @@ plot_trend <- function(slice){
 
 plot_trend(time.likert.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 
-
 ## [LIKERT] boxplot of trends
 ggplot(meltedLikert, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
+```
 
-
-
-
-#
-# DATA CLEANING
-#
-
+```{r cleaning_scalelikert}
 # find last time point
 find.last.time.point <- function(row, cols){
   # sort column names alphanumeric so that they're 'in order'
@@ -125,39 +129,13 @@ find.last.time.point <- function(row, cols){
   # go backwards until not NA
   
 }
-  
-  
+```
 
+```{r lasso}
 
+```
 
-
-
-
-
-
-
-
-##
-## LASSO REGRESSION
-##
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```{r timepoint}
 ##
 ## TIMECOURSE ANALYSIS
 ##
@@ -166,11 +144,6 @@ find.last.time.point <- function(row, cols){
 ## designed to be used on data that has many genes, and finding the genes
 ## that trend significantly over time. We don't have genes here, just
 ## the two groups. Maybe we don't need to do the significance analysis then?
-
-library(reshape2)
-source("http://bioconductor.org/biocLite.R")
-biocLite("edge")
-library(edge)
 
 
 ## prepare matrix for modeling
@@ -211,7 +184,4 @@ pi0 <- sig_results$pi0
 fdr.level <- 0.1
 sigGenes <- qvals < fdr.level
 
-
-##
-##
-##
+```
