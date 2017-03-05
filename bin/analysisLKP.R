@@ -1,4 +1,5 @@
 options(digits = 3) ## Formats output to 3 digits
+library(gtools)
 library(ggplot2)
 library(dplyr)
 library(data.table)
@@ -18,10 +19,12 @@ cols <- colnames(all.df)
 keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
 subset.df <- all.df[, keepcols]
 
-## Data cleaning
-# TODO: prptype -- what is biomet, what is cascade?
-# missing prptype for pt AGFT199 -- discarded
+# note: missing prptype for pt AGFT199 -- discarded in excel
 
+
+#
+# DESCRIPTIVE STATISTICS
+#
 
 ## Missingness by feature, ie how many N/As per column
 apply(subset.df, 2, function(x){sum(is.na(x))}) 
@@ -34,14 +37,69 @@ meta.df <- subset.df %>% select(patientid, treatment, age, race, gender, duratio
 apply(meta.df, 2, function(x){sum(is.na(x))}) 
 complete <- meta.df %>% complete.cases()
 
-
 ## Summary statistics
 ages <- subset.df %>% 
-    group_by(as.factor(gender)) %>% 
-    summarise(mean(duration_months))
+  group_by(as.factor(gender)) %>% 
+  summarise(mean(duration_months))
 
 hist(subset.df$age)
 hist(subset.df$duration_months)
+
+
+
+#
+# DATA CLEANING
+#
+
+# code prptype as a factor
+subset.df$prptype <- as.character(subset.df$prptype)
+subset.df$prpcode[subset.df$prptype == "cascade"] <- 1
+subset.df$prpcode[subset.df$prptype == "biomet"] <- 2
+subset.df$prpcode[subset.df$prptype == "abi"] <- 0
+subset.df$prpcode <- as.facto(subset.df$prpcode)
+
+# find last time point
+find.last.time.point <- function(row, cols){
+  # sort column names alphanumeric so that they're 'in order'
+  cols <- mixedsort(cols)
+  timepoints <- row[,cols]
+  # if all NA then skip
+  
+  # else
+  # go backwards until not NA
+  
+}
+  
+  
+## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
+
+timecols <- c('time0','time6','time12', 'time26', 'time52')
+time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
+
+
+## plot the trends over time for each patient
+
+meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
+patients <- time.prptype.df$patientid
+
+plot_trend <- function(slice){
+  ggplot(subset(meltedSubset, patientid %in% slice), 
+         aes(x=variable,y=value)) +
+    geom_point(aes(color=patientid), size=3) +
+    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
+}
+
+plot_trend(patients[1:10])
+
+
+## l
+ggplot(meltedSubset, aes(x=variable, y=value, factor(prpcode))) +
+  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
+
+ggplot(meltedSubset, aes(x=variable, y=value)) +
+  geom_boxplot(aes(fill = factor(prpcode)))
+stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
+
 
 
 
@@ -78,47 +136,22 @@ hist(subset.df$duration_months)
 ## the two groups. Maybe we don't need to do the significance analysis then?
 
 library(reshape2)
-
-time.prptype.df <- subset.df[, c(2,3,4,5,6,14)]
-
-matrixSubset <- as.matrix(as.data.frame(lapply(time.df, as.numeric)))
-colnames(matrixRank) <- sub.samp
-
-
 source("http://bioconductor.org/biocLite.R")
 biocLite("edge")
 library(edge)
 
 
-sub.samp.unique <- as.numeric(c(23.1, 12.3, 5.5, 0.7, 0.6, 0.2, 23.11, 12.31, 5.51, 0.71, 0.61, 0.21, 23.09, 12.29, 5.49, 0.69, 0.59))
-
-colnames(matrixRank) <- sub.samp.unique
-sub.samp.sort <- as.character(sort(sub.samp.unique))
-matrixRank2 <- matrixRank[,sub.samp.sort]  
-
-meltedRank <- melt(as.data.frame(matrixRank2))
-meltedRank$peptide <- 1:nrow(matrixRank2)
-meltedRank$variable <- as.numeric(meltedRank$variable)
-
-plot_trend <- function(slice){
-  ggplot(subset(meltedRank, peptide %in% slice), 
-         aes(x=variable,y=value)) +
-    geom_point(aes(color=peptide), size=3) +
-    stat_summary(aes(group=peptide, color=peptide), fun.y=mean, geom="line")
-}
-
-plot_trend(c(1,2,3,4,5,6,7,8,9,10))
-plot_trend(c(11,12,13,14,15,16,17,18,19,20))
-plot_trend(c(9000,9001,9002,9003,9004,9005,9006,9007,9008,9009))
-
+## prepare matrix for modeling
+matrixSubset <- as.matrix(as.data.frame(lapply(time.prptype.df[,timecols], as.numeric)))
 
 ## creating full and null models
-
 library(splines)
-de_obj <- build_study(data = matrixRank2, tme = sub.samp.unique, sampling = "timecourse")
+timevariable <- c(0,6,12,26,52)
+colnames(matrixSubset) <- timevariable
+de_obj <- build_study(data = matrixSubset, tme=timevariable, sampling = "timecourse")
 full_matrix <- fullMatrix(de_obj)
 null_matrix <- nullMatrix(de_obj)
-cr.expr <- exprs(de_obj)  # seems to be the same as the expression matrix
+prpcode.expr <- exprs(de_obj)  # seems to be the same as the expression matrix
 
 
 ## fitting the data
@@ -131,7 +164,7 @@ null_fitted <- fitNull(ef_obj)
 ## significance analysis
 
 
-de_odp <- odp(ef_obj, bs.its = 50, verbose = FALSE, n.mods = 50)  # optimal discovery procedure (odp) doesn't work
+#de_odp <- odp(ef_obj, bs.its = 50, verbose = FALSE, n.mods = 50)  # optimal discovery procedure (odp) doesn't work
 de_lrt <- lrt(de_obj, nullDistn = "normal")  # likelihood ratio test does work
 summary(de_lrt)
 
