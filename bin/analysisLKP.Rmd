@@ -23,10 +23,9 @@ library(edge)  # for timecourse analysis
 
 dir <- getwd()
 setwd(dir)
-all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+#all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim20170305.csv")
 ```
-
-
 
 ```{r dataframe_readin}
 ## Subset for the variables I know
@@ -56,7 +55,14 @@ ages <- subset.df %>%
 hist(subset.df$age)
 hist(subset.df$duration_months)
 
+median(na.omit(subset.df$duration_months))
+range(na.omit(subset.df$duration_months))
+
 ```
+
+ages look nice, almost normal distribution.
+
+duration in study median at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
 
 ```{r cleaning_codeprptype}
 ## code prptype as a factor
@@ -93,6 +99,8 @@ ggplot(meltedSubset, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
 ```
 
+"hairball" shows variance in the range that people used to rate their health. try likert?
+
 ```{r summarystats_likert}
 ## same as above but with the likert
 likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
@@ -117,18 +125,97 @@ ggplot(meltedLikert, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
 ```
 
-```{r cleaning_scalelikert}
-# find last time point
-find.last.time.point <- function(row, cols){
+still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
+
+```{r cleaning_coderesponse}
+## NOTE: THE FOLLOWING TWO FUNCTIONS ARE CODED IN BAD FORM... I HARD CODED THE TIME VARIABLES TO USE, SO YOU'LL HAVE TO CHANGE THOSE IF YOU WANT TO USE A DIFFERENT TIME SCALE (LIKERT, ETC)
+
+# find first time point
+find.first.time.point <- function(row){
   # sort column names alphanumeric so that they're 'in order'
+  #if (order == "first"){
+  #  cols <- mixedsort(cols)
+  #} else if (order == "last"){
+  #  cols <- rev(mixedsort(cols))
+  #}
+  
+  #cols <- timecols
+  cols <- likertcols
   cols <- mixedsort(cols)
-  timepoints <- row[,cols]
-  # if all NA then skip
+  timepoints <- row[cols]
+  print(timepoints)
   
-  # else
-  # go backwards until not NA
-  
+  if (length(na.omit(timepoints)) == 0){ # if all NA then skip
+    print("All timepoints are NA!")
+    result <- NA
+    return(result)
+  } else { # go backwards until not NA
+    for (timepoint in cols){
+      if (is.na(timepoints[timepoint]) == FALSE){
+        result <- timepoints[[timepoint]]
+        result <- trimws(result)
+        return(result)
+      }else{
+        next
+      } # close if-then to check if timepoint is last
+    } # close for loop
+  } # close 
 }
+
+# find last time point
+find.last.time.point <- function(row){
+  # sort column names alphanumeric so that they're 'in order'
+  
+  #cols <- timecols
+  cols <- likertcols
+  
+  cols <- rev(mixedsort(cols))
+  timepoints <- row[cols]
+  print(timepoints)
+  
+  if (length(na.omit(timepoints)) == 0){ # if all NA then skip
+    print("All timepoints are NA!")
+    result <- NA
+    return(result)
+  } else { # go backwards until not NA
+    for (timepoint in cols){
+      if (is.na(timepoints[timepoint]) == FALSE){
+        result <- timepoints[[timepoint]]
+        result <- trimws(result)
+        return(result)
+      }else{
+        next
+      } # close if-then to check if timepoint is last
+    } # close for loop
+  } # close 
+}
+
+# code 1 if last time point > first time point, 0 if not
+code.progress <- function(row){
+  first.pt <- row['firsttimept']
+  last.pt <- row['lasttimept']
+  
+  print(first.pt)
+  print(last.pt)
+  
+  if (is.na(first.pt) == TRUE){
+    return(NA)
+  } else if (first.pt < last.pt){
+    return(1)
+  } else {
+    return(0)
+  }
+}
+
+all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
+all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
+all.df$codedprog <- apply(all.df, 1, code.progress)
+
+all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
+all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
+all.df$codedprog.likert <- apply(all.df, 1, code.progress)
+
+#write.csv(all.df, file = "./data/prp_tendon_cleaned2_reshaped_delim_20170305.csv")
 ```
 
 ```{r lasso}
@@ -148,6 +235,7 @@ find.last.time.point <- function(row, cols){
 
 ## prepare matrix for modeling
 matrixSubset <- as.matrix(as.data.frame(lapply(time.prptype.df[,timecols], as.numeric)))
+matrixSubset <- as.matrix(as.data.frame(lapply(time.likert.df[,timecols], as.numeric)))
 
 ## creating full and null models
 library(splines)
