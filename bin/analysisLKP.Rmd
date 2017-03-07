@@ -1,31 +1,41 @@
+---
+title: "analysisLKP.Rmd"
+author: "LK Pino"
+date: "March 5, 2017"
+output: html_document
+---
+
+Hi guys
+
+I'm moving my *.R code into *.Rmd so that I can make comments for my write up, and because the code is getting a little long and I wanted to organize!
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
 options(digits = 3) ## Formats output to 3 digits
 library(gtools)
 library(ggplot2)
 library(dplyr)
 library(data.table)
-
-
-
-#
-# CREATION OF DATAFRAME AND PREPROCESSING
-#
+library(reshape2)
+source("http://bioconductor.org/biocLite.R")  # for timecourse analysis
+biocLite("edge")  # for timecourse analysis
+library(edge)  # for timecourse analysis
 
 dir <- getwd()
 setwd(dir)
-all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+#all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim20170305.csv")
+```
 
+```{r dataframe_readin}
 ## Subset for the variables I know
 cols <- colnames(all.df)
 keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
 subset.df <- all.df[, keepcols]
-
 # note: missing prptype for pt AGFT199 -- discarded in excel
+```
 
-
-#
-# DESCRIPTIVE STATISTICS
-#
-
+```{r summarystats_meta}
 ## Missingness by feature, ie how many N/As per column
 apply(subset.df, 2, function(x){sum(is.na(x))}) 
 complete <- subset.df %>% complete.cases()
@@ -45,57 +55,36 @@ ages <- subset.df %>%
 hist(subset.df$age)
 hist(subset.df$duration_months)
 
-## Creating binary variable for improvement at 52 weeks- 
-##will need write a function if no 52 week time piont available- to searh previos time 26, 12 or 6 for a value 
+median(na.omit(subset.df$duration_months))
+range(na.omit(subset.df$duration_months))
 
-improved.last <- function(x) if(x <= 4) 0 else 1  ##does R include NA in this data count?
+```
 
-improved.52 <- sapply(subset.df$time52lpt,improved.last)
+ages look nice, almost normal distribution.
 
-## Should look at Summary mean scores first
+duration in study median at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
 
-##Developing the propensity scores
-
-subset.ps <- glm(prponly_num ~ duration_m + gender_num + age + time0pda + time0pse + time0, ##is time0 the site specific combined?
-                 family = binomial(), data = subset.df)
-summary(subset.ps)
-
-prs_df <- data.frame(pr_score = predict(subset.ps, type = "response"),
-                     prponly_num = subset.df$model$prponly_num)
-head(prs_df)
-
-labs <- paste("Actual PRP Type:", c("LR-PRP", "LP-PRP"))
-prs_df %>%
-  mutate(prponly_num = ifelse(prponly == 1, labs[1], labs[2])) %>%
-  ggplot(aes(x = pr_score)) +
-  geom_histogram(color = "white") +
-  facet_wrap(~prponly_num) +
-  xlab("Probability of getting LR-PRP injection") +
-  theme_bw()
-
-##don't think we can really match by ps for this analysis bc of the imbalance in groups
-
+```{r cleaning_codeprptype}
 ## code prptype as a factor
 subset.df$prptype <- as.character(subset.df$prptype)
 subset.df$prpcode[subset.df$prptype == "cascade"] <- 1
 subset.df$prpcode[subset.df$prptype == "biomet"] <- 2
 subset.df$prpcode[subset.df$prptype == "abi"] <- 0
 subset.df$prpcode <- as.factor(subset.df$prpcode)
+```
 
+```{r summarystats_notlikert}
 ## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
-
 timecols <- c('time0','time6','time12', 'time26', 'time52')
 time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
 
 ## plot the trends over time for each patient (the other scale, not the likert scale)
-
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
 ggplot(meltedSubset, aes(x=variable, y=value, factor(prpcode))) +
   stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
 
 ## plot subset of the patients trend over time (whatever subset you want)
-
 plot_trend <- function(slice){
   ggplot(subset(meltedSubset, patientid %in% slice), 
          aes(x=variable,y=value)) +
@@ -105,23 +94,23 @@ plot_trend <- function(slice){
 
 plot_trend(time.prptype.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 
-
 ## boxplot of trends
 ggplot(meltedSubset, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
+```
 
+"hairball" shows variance in the range that people used to rate their health. try likert?
 
-## above with likert
+```{r summarystats_likert}
+## same as above but with the likert
 likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
 time.likert.df <- subset.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
-
 
 ggplot(meltedLikert, aes(x=variable, y=value, factor(prpcode))) +
   stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
 
 ## [LIKERT] plot subset of the patients trend over time (whatever subset you want)
-
 plot_trend <- function(slice){
   ggplot(subset(meltedLikert, patientid %in% slice), 
          aes(x=variable,y=value)) +
@@ -131,62 +120,109 @@ plot_trend <- function(slice){
 
 plot_trend(time.likert.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 
-
 ## [LIKERT] boxplot of trends
 ggplot(meltedLikert, aes(x=variable, y=value)) +
   geom_boxplot(aes(fill = factor(prpcode)))
+```
 
+still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
 
+```{r cleaning_coderesponse}
+## NOTE: THE FOLLOWING TWO FUNCTIONS ARE CODED IN BAD FORM... I HARD CODED THE TIME VARIABLES TO USE, SO YOU'LL HAVE TO CHANGE THOSE IF YOU WANT TO USE A DIFFERENT TIME SCALE (LIKERT, ETC)
 
-
-#
-# DATA CLEANING
-#
+# find first time point
+find.first.time.point <- function(row){
+  # sort column names alphanumeric so that they're 'in order'
+  #if (order == "first"){
+  #  cols <- mixedsort(cols)
+  #} else if (order == "last"){
+  #  cols <- rev(mixedsort(cols))
+  #}
+  
+  #cols <- timecols
+  cols <- likertcols
+  cols <- mixedsort(cols)
+  timepoints <- row[cols]
+  print(timepoints)
+  
+  if (length(na.omit(timepoints)) == 0){ # if all NA then skip
+    print("All timepoints are NA!")
+    result <- NA
+    return(result)
+  } else { # go backwards until not NA
+    for (timepoint in cols){
+      if (is.na(timepoints[timepoint]) == FALSE){
+        result <- timepoints[[timepoint]]
+        result <- trimws(result)
+        return(result)
+      }else{
+        next
+      } # close if-then to check if timepoint is last
+    } # close for loop
+  } # close 
+}
 
 # find last time point
-find.last.time.point <- function(row, cols){
+find.last.time.point <- function(row){
   # sort column names alphanumeric so that they're 'in order'
-  cols <- mixedsort(cols)
-  timepoints <- row[,cols]
-  # if all NA then skip
   
-  # else
-  # go backwards until not NA
+  #cols <- timecols
+  cols <- likertcols
   
+  cols <- rev(mixedsort(cols))
+  timepoints <- row[cols]
+  print(timepoints)
+  
+  if (length(na.omit(timepoints)) == 0){ # if all NA then skip
+    print("All timepoints are NA!")
+    result <- NA
+    return(result)
+  } else { # go backwards until not NA
+    for (timepoint in cols){
+      if (is.na(timepoints[timepoint]) == FALSE){
+        result <- timepoints[[timepoint]]
+        result <- trimws(result)
+        return(result)
+      }else{
+        next
+      } # close if-then to check if timepoint is last
+    } # close for loop
+  } # close 
 }
+
+# code 1 if last time point > first time point, 0 if not
+code.progress <- function(row){
+  first.pt <- row['firsttimept']
+  last.pt <- row['lasttimept']
   
+  print(first.pt)
+  print(last.pt)
   
+  if (is.na(first.pt) == TRUE){
+    return(NA)
+  } else if (first.pt < last.pt){
+    return(1)
+  } else {
+    return(0)
+  }
+}
 
+all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
+all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
+all.df$codedprog <- apply(all.df, 1, code.progress)
 
+all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
+all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
+all.df$codedprog.likert <- apply(all.df, 1, code.progress)
 
+#write.csv(all.df, file = "./data/prp_tendon_cleaned2_reshaped_delim_20170305.csv")
+```
 
+```{r lasso}
 
+```
 
-
-
-
-
-##
-## LASSO REGRESSION
-##
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```{r timepoint}
 ##
 ## TIMECOURSE ANALYSIS
 ##
@@ -196,14 +232,10 @@ find.last.time.point <- function(row, cols){
 ## that trend significantly over time. We don't have genes here, just
 ## the two groups. Maybe we don't need to do the significance analysis then?
 
-library(reshape2)
-source("http://bioconductor.org/biocLite.R")
-biocLite("edge")
-library(edge)
-
 
 ## prepare matrix for modeling
 matrixSubset <- as.matrix(as.data.frame(lapply(time.prptype.df[,timecols], as.numeric)))
+matrixSubset <- as.matrix(as.data.frame(lapply(time.likert.df[,timecols], as.numeric)))
 
 ## creating full and null models
 library(splines)
@@ -240,7 +272,4 @@ pi0 <- sig_results$pi0
 fdr.level <- 0.1
 sigGenes <- qvals < fdr.level
 
-
-##
-##
-##
+```
