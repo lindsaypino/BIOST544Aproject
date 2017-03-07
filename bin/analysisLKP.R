@@ -48,20 +48,40 @@ hist(subset.df$duration_months)
 ## Creating binary variable for improvement at 52 weeks- 
 ##will need write a function if no 52 week time piont available- to searh previos time 26, 12 or 6 for a value 
 
-improved.last <- function(x) if(x <= 4) 0 else 1  ##does R include NA in this data count?
+improved.last <- function(x) {
+  if(x <= 4) {0} else {1}  } ##does R include NA in this data count?
 
 improved.52 <- sapply(subset.df$time52lpt,improved.last)
 
-## Should look at Summary mean scores first
+##Summary mean change score scores first
+
+
+all.df$pda0.transf <- 100 - all.df$time0pda
+all.df$pda6.transf <- 100 - all.df$time6pda
+all.df$pda12.transf <- 100 - all.df$time12pda
+all.df$pda26.transf <- 100 - all.df$time26pda
+all.df$pda52.transf <- 100 - all.df$time52pda
+
+all.df$pse0.transf <- 100 - all.df$time0pse
+all.df$pse6.transf <- 100 - all.df$time6pse
+all.df$pse12.transf <- 100 - all.df$time12pse
+all.df$pse26.transf <- 100 - all.df$time26pse
+all.df$pse52.transf <- 100 - all.df$time52pse
+
+##Standardize the outcomes scores
+
+
+all.df %>%
+  mutate(score = (x - mean(x)) / sd(x))
 
 ##Developing the propensity scores
 
-subset.ps <- glm(prponly_num ~ duration_m + gender_num + age + time0pda + time0pse + time0, ##is time0 the site specific combined?
-                 family = binomial(), data = subset.df)
+all.ps <- glm(prponly_num ~ duration_m + gender_num + age + time0pda + time0pse + time0,
+                 family = binomial(), data = all.df)
 summary(subset.ps)
 
-prs_df <- data.frame(pr_score = predict(subset.ps, type = "response"),
-                     prponly_num = subset.df$model$prponly_num)
+prs_df <- data.frame(pr_score = predict(all.ps, type = "response"),
+                     prponly_num = all.df$model$prponly_num)
 head(prs_df)
 
 labs <- paste("Actual PRP Type:", c("LR-PRP", "LP-PRP"))
