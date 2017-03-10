@@ -24,7 +24,7 @@ library(edge)  # for timecourse analysis
 dir <- getwd()
 setwd(dir)
 #all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
-all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim20170305.csv")
+all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")
 ```
 
 ```{r dataframe_readin}
@@ -66,11 +66,11 @@ duration in study median at 17 months, min is 2 months and max is 600 months?! t
 
 ```{r cleaning_codeprptype}
 ## code prptype as a factor
-subset.df$prptype <- as.character(subset.df$prptype)
-subset.df$prpcode[subset.df$prptype == "cascade"] <- 1
-subset.df$prpcode[subset.df$prptype == "biomet"] <- 2
-subset.df$prpcode[subset.df$prptype == "abi"] <- 0
-subset.df$prpcode <- as.factor(subset.df$prpcode)
+all.df$prptype <- as.character(all.df$prptype)
+all.df$prpcode[all.df$prptype == "cascade"] <- 1
+all.df$prpcode[all.df$prptype == "biomet"] <- 2
+all.df$prpcode[all.df$prptype == "abi"] <- 0
+all.df$prpcode <- as.factor(all.df$prpcode)
 ```
 
 ```{r summarystats_notlikert}
@@ -127,7 +127,7 @@ ggplot(meltedLikert, aes(x=variable, y=value)) +
 
 still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
 
-```{r cleaning_coderesponse}
+```{r cleaning_coderesponse, eval=FALSE}
 ## NOTE: THE FOLLOWING TWO FUNCTIONS ARE CODED IN BAD FORM... I HARD CODED THE TIME VARIABLES TO USE, SO YOU'LL HAVE TO CHANGE THOSE IF YOU WANT TO USE A DIFFERENT TIME SCALE (LIKERT, ETC)
 
 # find first time point
@@ -139,8 +139,8 @@ find.first.time.point <- function(row){
   #  cols <- rev(mixedsort(cols))
   #}
   
-  #cols <- timecols
-  cols <- likertcols
+  #cols <- timecols  # timepoint response values
+  cols <- likertcols  # likert response values
   cols <- mixedsort(cols)
   timepoints <- row[cols]
   print(timepoints)
@@ -166,8 +166,8 @@ find.first.time.point <- function(row){
 find.last.time.point <- function(row){
   # sort column names alphanumeric so that they're 'in order'
   
-  #cols <- timecols
-  cols <- likertcols
+  #cols <- timecols  # timepoint response values
+  cols <- likertcols  # likert response values
   
   cols <- rev(mixedsort(cols))
   timepoints <- row[cols]
@@ -216,6 +216,107 @@ all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
 all.df$codedprog.likert <- apply(all.df, 1, code.progress)
 
 #write.csv(all.df, file = "./data/prp_tendon_cleaned2_reshaped_delim_20170305.csv")
+```
+
+```{r cleaning_pctresponse, eval=FALSE}
+## note: I gave up on this section and just did it in excel! c:
+
+## BASELINE SUBTRACTION
+baseline.subtraction <- function(row){
+  # get baseline response (first time point)
+  
+  #cols <- timecols  # timepoint response values
+  cols <- likertcols  # likert response values
+  
+  cols <- rev(mixedsort(cols))
+  timepoints <- row[cols]
+
+  baseline <- as.numeric(find.first.time.point(timepoints))
+  #print(baseline)
+  
+  new.timepoints <- list()  # intialize empty vector to store baseline-substracted timepoints
+  
+  # subtract baseline from other time points
+  for (i in timepoints){
+    value <- as.numeric(timepoints[i])
+    #print(value) 
+    
+    if (is.na(value) == TRUE){
+      new.timepoints[i] <- NA
+    } else {
+      new.timepoints[i] <- value-baseline
+    }
+  }
+  print(timepoints)
+  print(new.timepoints)
+  return(new.timepoints)
+}
+
+## TIMEPOINTS TO PERCENTAGES
+#to.percentages <- function{
+  # find maximum response
+#}
+
+#baselinesub.df <- apply(all.df, 1, to.percentages)
+
+```
+
+```{r summarystats_cleaneddata}
+## same as above but with the cleaned data
+
+plot.overall.trend <- function(df){
+  ggplot(df, aes(x=variable, y=value, factor(prpcode))) +
+  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
+}
+
+plot.boxplot <- function(df){
+  ggplot(df, aes(x=variable, y=value)) +
+  geom_boxplot(aes(fill = factor(prpcode)))
+}
+
+# baseline-subtracted 0-100 scaled values
+baselinecols <- c('baseline0', 'baseline6', 'baseline12', 'baseline26', 'baseline52')
+baseline.df <- all.df[, c('patientid',baselinecols,'prpcode')]
+meltedBaseline <- melt(as.data.frame(baseline.df), id=c('patientid','prpcode'))
+
+plot.overall.trend(meltedBaseline)
+plot.boxplot(meltedBaseline)
+
+# baseline-subtracted pct scaled values
+baselinepctcols <- c('pct.base0', 'pct.base6', 'pct.base12', 'pct.base26', 'pct.base52')
+baselinepct.df <- all.df[, c('patientid',baselinepctcols,'prpcode')]
+meltedBaselinePct <- melt(as.data.frame(baselinepct.df), id=c('patientid','prpcode'))
+
+plot.overall.trend(meltedBaselinePct)
+plot.boxplot(meltedBaselinePct)
+
+# baseline-subtracted likert
+baselinelikertcols <- c('baseline.likert6','baseline.likert12','baseline.likert26','baseline.likert52')
+baselinelikert.df <- all.df[, c('patientid',baselinelikertcols,'prpcode')]
+meltedBaselineLikert <- melt(as.data.frame(baselinelikert.df), id=c('patientid','prpcode'))
+
+plot.overall.trend(meltedBaselineLikert)
+plot.boxplot(meltedBaselineLikert)
+
+# baseline-subtracted likert
+pctlikertcols <- c('pct.likert0', 'pct.likert6', 'pct.likert12', 'pct.likert26', 'pct.likert52')
+pctlikert.df <- all.df[, c('patientid',pctlikertcols,'prpcode')]
+meltedPctLikert <- melt(as.data.frame(pctlikert.df), id=c('patientid','prpcode'))
+
+plot.overall.trend(meltedPctLikert)
+plot.boxplot(meltedPctLikert)
+
+
+## plot subset of the patients trend over time (whatever subset you want)
+plot.slice.trend <- function(df, slice){
+  ggplot(subset(df, patientid %in% slice), 
+         aes(x=variable,y=value)) +
+    geom_point(aes(color=patientid), size=3) +
+    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
+}
+
+plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
+
 ```
 
 ```{r lasso}
