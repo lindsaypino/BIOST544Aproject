@@ -7,7 +7,7 @@ output: html_document
 
 Hi guys
 
-I'm moving my *.R code into *.Rmd so that I can make comments for my write up, and because the code is getting a little long and I wanted to organize!
+I'm moving my \*.R code into \*.Rmd so that I can make comments for my write up, and because the code is getting a little long and I wanted to organize!
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
