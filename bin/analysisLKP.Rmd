@@ -74,6 +74,26 @@ all.df$prpcode <- as.factor(all.df$prpcode)
 ```
 
 ```{r summarystats_notlikert}
+# make a line plot to visualize trend over time
+plot.overall.trend <- function(df){
+  ggplot(df, aes(x=variable, y=value, factor(prpcode))) +
+  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
+}
+
+# make a boxplot of the values to visualize variance and trend over time
+plot.boxplot <- function(df){
+  ggplot(df, aes(x=variable, y=value)) +
+  geom_boxplot(aes(fill = factor(prpcode)))
+}
+
+# make plot of the subset of patients trend over time (whatever subset you want)
+plot.slice.trend <- function(df, slice){
+  ggplot(subset(df, patientid %in% slice), 
+         aes(x=variable,y=value)) +
+    geom_point(aes(color=patientid), size=3) +
+    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
+}
+
 ## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
 timecols <- c('time0','time6','time12', 'time26', 'time52')
 time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
@@ -81,22 +101,11 @@ time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
 ## plot the trends over time for each patient (the other scale, not the likert scale)
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
-ggplot(meltedSubset, aes(x=variable, y=value, factor(prpcode))) +
-  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
+plot.overall.trend(meltedSubset)
+plot.boxplot(meltedSubset)
 
-## plot subset of the patients trend over time (whatever subset you want)
-plot_trend <- function(slice){
-  ggplot(subset(meltedSubset, patientid %in% slice), 
-         aes(x=variable,y=value)) +
-    geom_point(aes(color=patientid), size=3) +
-    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
-}
-
-plot_trend(time.prptype.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
-
-## boxplot of trends
-ggplot(meltedSubset, aes(x=variable, y=value)) +
-  geom_boxplot(aes(fill = factor(prpcode)))
+## plot a slice of the dataframe to visualize it better
+plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 ```
 
 "hairball" shows variance in the range that people used to rate their health. try likert?
@@ -107,22 +116,8 @@ likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
 time.likert.df <- subset.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
 
-ggplot(meltedLikert, aes(x=variable, y=value, factor(prpcode))) +
-  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
-
-## [LIKERT] plot subset of the patients trend over time (whatever subset you want)
-plot_trend <- function(slice){
-  ggplot(subset(meltedLikert, patientid %in% slice), 
-         aes(x=variable,y=value)) +
-    geom_point(aes(color=patientid), size=3) +
-    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
-}
-
-plot_trend(time.likert.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
-
-## [LIKERT] boxplot of trends
-ggplot(meltedLikert, aes(x=variable, y=value)) +
-  geom_boxplot(aes(fill = factor(prpcode)))
+plot.overall.trend(meltedLikert)
+plot.boxplot(meltedLikert)
 ```
 
 still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
@@ -262,18 +257,6 @@ baseline.subtraction <- function(row){
 ```
 
 ```{r summarystats_cleaneddata}
-## same as above but with the cleaned data
-
-plot.overall.trend <- function(df){
-  ggplot(df, aes(x=variable, y=value, factor(prpcode))) +
-  stat_summary(aes(group=patientid, color = as.factor(prpcode)), alpha=0.5, fun.y=mean, geom="line")
-}
-
-plot.boxplot <- function(df){
-  ggplot(df, aes(x=variable, y=value)) +
-  geom_boxplot(aes(fill = factor(prpcode)))
-}
-
 # baseline-subtracted 0-100 scaled values
 baselinecols <- c('baseline0', 'baseline6', 'baseline12', 'baseline26', 'baseline52')
 baseline.df <- all.df[, c('patientid',baselinecols,'prpcode')]
@@ -305,17 +288,6 @@ meltedPctLikert <- melt(as.data.frame(pctlikert.df), id=c('patientid','prpcode')
 
 plot.overall.trend(meltedPctLikert)
 plot.boxplot(meltedPctLikert)
-
-
-## plot subset of the patients trend over time (whatever subset you want)
-plot.slice.trend <- function(df, slice){
-  ggplot(subset(df, patientid %in% slice), 
-         aes(x=variable,y=value)) +
-    geom_point(aes(color=patientid), size=3) +
-    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
-}
-
-plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
 
 ```
 
