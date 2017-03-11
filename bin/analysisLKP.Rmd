@@ -20,11 +20,12 @@ library(reshape2)
 source("http://bioconductor.org/biocLite.R")  # for timecourse analysis
 biocLite("edge")  # for timecourse analysis
 library(edge)  # for timecourse analysis
+library(gridExtra)
 
 dir <- getwd()
 setwd(dir)
-#all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
-all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")
+#all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim.csv")
+all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")
 ```
 
 ```{r dataframe_readin}
@@ -96,13 +97,14 @@ plot.slice.trend <- function(df, slice){
 
 ## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
 timecols <- c('time0','time6','time12', 'time26', 'time52')
-time.prptype.df <- subset.df[, c('patientid',timecols,'prpcode')]
+time.prptype.df <- all.df[, c('patientid',timecols,'prpcode')]
 
 ## plot the trends over time for each patient (the other scale, not the likert scale)
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedSubset)
-plot.boxplot(meltedSubset)
+response.trend <- plot.overall.trend(meltedSubset)
+response.box <- plot.boxplot(meltedSubset)
+ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
 
 ## plot a slice of the dataframe to visualize it better
 plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
@@ -113,11 +115,13 @@ plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can chan
 ```{r summarystats_likert}
 ## same as above but with the likert
 likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
-time.likert.df <- subset.df[, c('patientid',likertcols,'prpcode')]
+time.likert.df <- all.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedLikert)
-plot.boxplot(meltedLikert)
+likert.trend <- plot.overall.trend(meltedLikert)
+likert.box <- plot.boxplot(meltedLikert)
+ggsave("../results/summary_likert.png", arrangeGrob(likert.trend, likert.box))
+
 ```
 
 still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
@@ -262,36 +266,43 @@ baselinecols <- c('baseline0', 'baseline6', 'baseline12', 'baseline26', 'baselin
 baseline.df <- all.df[, c('patientid',baselinecols,'prpcode')]
 meltedBaseline <- melt(as.data.frame(baseline.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedBaseline)
-plot.boxplot(meltedBaseline)
+baseline.trend <- plot.overall.trend(meltedBaseline)
+baseline.box <- plot.boxplot(meltedBaseline)
+ggsave("../results/summary_baseline.png", arrangeGrob(baseline.trend, baseline.box))
 
 # baseline-subtracted pct scaled values
 baselinepctcols <- c('pct.base0', 'pct.base6', 'pct.base12', 'pct.base26', 'pct.base52')
 baselinepct.df <- all.df[, c('patientid',baselinepctcols,'prpcode')]
 meltedBaselinePct <- melt(as.data.frame(baselinepct.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedBaselinePct)
-plot.boxplot(meltedBaselinePct)
+pct.trend <- plot.overall.trend(meltedBaselinePct)
+pct.box <- plot.boxplot(meltedBaselinePct)
+ggsave("../results/summary_pct.png", arrangeGrob(pct.trend, pct.box))
 
 # baseline-subtracted likert
 baselinelikertcols <- c('baseline.likert6','baseline.likert12','baseline.likert26','baseline.likert52')
 baselinelikert.df <- all.df[, c('patientid',baselinelikertcols,'prpcode')]
 meltedBaselineLikert <- melt(as.data.frame(baselinelikert.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedBaselineLikert)
-plot.boxplot(meltedBaselineLikert)
+base.likert.trend <- plot.overall.trend(meltedBaselineLikert)
+base.likert.box <- plot.boxplot(meltedBaselineLikert)
+ggsave("../results/summary_baselikert.png", arrangeGrob(base.likert.trend, base.likert.box))
+
 
 # baseline-subtracted likert
 pctlikertcols <- c('pct.likert0', 'pct.likert6', 'pct.likert12', 'pct.likert26', 'pct.likert52')
 pctlikert.df <- all.df[, c('patientid',pctlikertcols,'prpcode')]
 meltedPctLikert <- melt(as.data.frame(pctlikert.df), id=c('patientid','prpcode'))
 
-plot.overall.trend(meltedPctLikert)
-plot.boxplot(meltedPctLikert)
+pct.likert.trend <- plot.overall.trend(meltedPctLikert)
+pct.likert.box <- plot.boxplot(meltedPctLikert)
+ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.likert.box))
+
 
 ```
 
 ```{r lasso}
+#subset the dataframe for the lasso features and response variables
 
 ```
 
