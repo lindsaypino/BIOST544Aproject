@@ -51,14 +51,13 @@ do.one <- function(outcome, label){
   print(outcome)
   return(mean(outcome[perm.label == 2]) - mean(outcome[perm.label == 1])) # lkp: stupid R
 }
-```
 
-```{r}
+
 
 do.one.v2 <- function(outcome, label){
   
-  print(outcome)
-  print(label)
+  #print(outcome)
+  #print(label)
   
   # permute the data by shuffling the treatment labels
   perm <- sample(1:length(label), replace = FALSE)
@@ -85,16 +84,16 @@ do.one.v2 <- function(outcome, label){
 }
 
 sampling.dist <- with(submz.df,
-                      replicate(1e1, do.one.v2(codedprog.likert, prptype)))
+                      replicate(1e4, do.one.v2(lasttimept.likert, prptype))) # lkp: needed to use the "lasttimept.likert" to get the prop score. alternatively, can use "codedprog.likert" for the 0-1 binary outcome
 
 ggplot(data.frame(perm.prop.diff = sampling.dist), aes(x = perm.prop.diff, y=..density..)) +
   geom_density() + 
   geom_vline(xintercept = prop.diff, color = "red")
 
 mean(sampling.dist > prop.diff)
-```
 
-```{r}
+
+
 ## Regression before PS Score weighting
 prptrtraw <- lm(pct.likert52 ~ prponly_num + pct.base52 + age + gender + duration_months + dxcode + time52pda + time52pse, data = submz.df)
                 summary(prptrtraw)
