@@ -73,6 +73,17 @@ all.df$prpcode[all.df$prptype == "cascade"] <- 0
 all.df$prpcode[all.df$prptype == "biomet"] <- 1
 all.df$prpcode[all.df$prptype == "abi"] <- 2
 all.df$prpcode <- as.factor(all.df$prpcode)
+
+## code pt
+all.df$pt <- as.character(all.df$pt)
+all.df$pt[all.df$pt == "no"] <- 0
+all.df$pt[all.df$pt == "yes"] <- 1
+
+## code cortisone_yn
+all.df$cortisone_yn <- as.character(all.df$cortisone_yn)
+all.df$cortisone_yn[all.df$cortisone_yn == "no"] <- 0
+all.df$cortisone_yn[all.df$cortisone_yn == "yes"] <- 1
+
 ```
 
 ```{r summarystats_notlikert}
@@ -105,12 +116,12 @@ meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode')
 
 response.trend <- plot.overall.trend(meltedSubset)
 response.box <- plot.boxplot(meltedSubset)
-ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
+#ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
 
 ## plot a slice of the dataframe to visualize it better
 slice <- c(1,2,3,20,21,22,130,131,132)
 plot.slice.trend(meltedSubset, all.df$patientid[slice])  # note: you can change this "[1:10]" to however many or few you want! 
-ggsave("../results/summary_response_example.png")
+#ggsave("../results/summary_response_example.png")
 ```
 
 "hairball" shows variance in the range that people used to rate their health. try likert?
@@ -309,61 +320,70 @@ ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.lik
 ## Lasso regression using metadata as potential contributing variables
 ##
 
-#subset the dataframe for the lasso features and response variables
+# subset the dataframe for the lasso features and response variables
 #lassocols <- c('codedprog', 'prpcode', 'injurytype', 'dxcode', 'pt', 'cortisone_yn','nitropatch', 'surgery', 'coldlaser', 'massage', 'acupuncture', 'chiropractor', 'age','race', 'gender', 'athlete_status', 'primary_sport', 'duration_months')
-lassocols <- c('codedprog', 'prpcode', 'dxcode', 'pt', 'cortisone_yn', 'age', 'gender', 'duration_months')
+# couldn't use all the variables above, too much NA
+lassocols <- c('codedprog', 'prpcode', 'dxcode', 'pt', 'cortisone_yn', 'age', 'gender_num', 'duration_months')
 lasso.df <- all.df[,lassocols]
+lasso.df <- subset(lasso.df, prpcode != 2)
+lasso.df <- na.omit(lasso.df)
 
+# convert everything to factors or numeric as necessary
 lasso.df$codedprog <- as.factor(lasso.df$codedprog)
 lasso.df$prpcode <- as.factor(lasso.df$prpcode)
 lasso.df$dxcode <- as.factor(lasso.df$dxcode)
 lasso.df$pt <- as.factor(lasso.df$pt)
 lasso.df$cortisone_yn <- as.factor(lasso.df$cortisone_yn)
 lasso.df$age <- as.numeric(lasso.df$age)
-lasso.df$gender <- as.factor(lasso.df$gender)
+lasso.df$gender_num <- as.factor(lasso.df$gender_num)
 lasso.df$duration_months <- as.numeric(lasso.df$duration_months)
+#lasso.df$time0 <- as.numeric(lasso.df$time0)
 
-xfactors <- model.matrix(codedprog ~ prpcode + dxcode + pt + cortisone_yn + gender, data=lasso.df)#[, -1]
+# expand the factors to dummy variables
+xfactors <- model.matrix(codedprog ~ prpcode + dxcode + pt + cortisone_yn + gender_num, data=lasso.df)[, -1]
+
+# join the dummy variables with the continuous variables
 x <- as.matrix(data.frame(lasso.df$age, lasso.df$duration_months, xfactors))
 
-y <- as.factor(lasso.df$codedprog)  # create outcome vector
+# create outcome vector
+y <- as.factor(lasso.df$codedprog)
 
-# Split into train and test
-train=sample(1:nrow(x), nrow(x)/2)
-test=(-train)
-y.test=outcome[y]
+# Split into train and test, just doing two-fold I guess
+test <- sample(1:nrow(x), nrow(x)/2)
+train <- (-test)
+y.test <- y[test]
 
 # make a grid of lambda values to test over
-grid=10^seq(5,-2,length=100)
+grid <- 10^seq(5,-2,length=100)
 
 # finally, fit the lasso model
 lasso.mod <- glmnet(x[train,], y[train], alpha=1, family="binomial", lambda=grid)
 
-# visualize results of the lasso, note shrinkage
+# visualize results of the lasso, note coefficient paths
+jpeg('../results/lasso_coefficientpaths.jpg')
 plot(lasso.mod,xvar="lambda",col=c(1:ncol(x)),lwd=c(1,2,3))
 legend('topright',colnames(x),col=c(1:ncol(x)),bty='n',lwd=c(1,2,3))
-
-par(mfrow=c(1,2))
-plot(ridge.mod,xvar="lambda",col=c(1:ncol(lasso.matrix)))
-legend('topright',colnames(lasso.matrix),lty=1,col=c(1:ncol(lasso.matrix)),bty='n')
-plot(lasso.mod,xvar="lambda",col=c(1:ncol(lasso.matrix)))
+coef(lasso.mod)[, 10]
 
 # now pick the best lambda value for the train data
 set.seed(1)
-cv.out=cv.glmnet(lasso.matrix[train,],outcome[train],alpha=1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha=1,family="binomial")
+jpeg('../results/lasso_bestlambda.jpg')
 plot(cv.out)
 bestlam <- cv.out$lambda.min
 
-# fit the model to the test data and check the regression performance
-lasso.pred <- predict(lasso.mod,s=bestlam,newx=lasso.matrix[test,])
-mean((lasso.pred-outcome.test)^2)
+# fit the model with the best lambda from training to the test data and check the regression performance
+lasso.pred <- predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2) # hmm, how to measure performance with a binary outcome...
 
-out <- glmnet(lasso.matrix,outcome,alpha=1,lambda=grid)
-lasso.coef <- predict(out,type="coefficients",s=bestlam)[1:9,]
+out <- glmnet(x, y, alpha=1, family="binomial", lambda=grid)
+lasso.coef <- predict(out,type="coefficients",s=bestlam)[1:15,]
 lasso.coef
 lasso.coef[lasso.coef!=0]
-
 ```
+
+coefficients suggest injection site, specifically dxcode2 (lateral epicondylosis) and dxcode6 (proximal hamstring tendonosis), and gender are predictive.
+
 
 ```{r timepoint}
 ##
