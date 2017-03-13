@@ -29,13 +29,7 @@ setwd(dir)
 all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")  # data frame cleaned and 'normalized' in excel
 ```
 
-```{r dataframe_readin}
-## Subset for the variables I know
-#cols <- colnames(all.df)
-#keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
-#subset.df <- all.df[, keepcols]
-# note: missing prptype for pt AGFT199 -- discarded in excel
-```
+I'm starting by just making some summary statistics and plots for the data, in order to get a feel for what I'm working with.
 
 ```{r summarystats_meta}
 ## Missingness by feature, ie how many N/As per column
@@ -50,10 +44,6 @@ apply(meta.df, 2, function(x){sum(is.na(x))})
 complete <- meta.df %>% complete.cases()
 
 ## Summary statistics
-ages <- all.df %>% 
-  group_by(as.factor(gender_num)) %>% 
-  summarise(mean(duration_months))
-
 hist(all.df$age)
 hist(all.df$duration_months)
 
@@ -62,9 +52,9 @@ range(na.omit(all.df$duration_months))
 
 ```
 
-ages look nice, almost normal distribution.
+Unfortunately it looks like there's a lot of missingness in the data. For the metadata that might be useful in modeling, the ages look nice, almost a normal distribution. The duration in study median is at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
 
-duration in study median at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
+Right off the bat let's clean up some of the variables by coding them.
 
 ```{r cleaning_codeprptype}
 ## code prptype as a factor
@@ -85,6 +75,8 @@ all.df$cortisone_yn[all.df$cortisone_yn == "no"] <- 0
 all.df$cortisone_yn[all.df$cortisone_yn == "yes"] <- 1
 
 ```
+
+Now let's take a look at the response variables we have. We already know there's going to be missingness from the summary statistics above, but I want to see the trends over time (as lines and as boxplots) to see if there's anything  interesting there.
 
 ```{r summarystats_notlikert}
 # make a line plot to visualize trend over time
@@ -114,8 +106,8 @@ time.prptype.df <- all.df[, c('patientid',timecols,'prpcode')]
 ## plot the trends over time for each patient (the other scale, not the likert scale)
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
-response.trend <- plot.overall.trend(meltedSubset)
-response.box <- plot.boxplot(meltedSubset)
+(response.trend <- plot.overall.trend(meltedSubset))
+(response.box <- plot.boxplot(meltedSubset))
 #ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
 
 ## plot a slice of the dataframe to visualize it better
@@ -124,7 +116,9 @@ plot.slice.trend(meltedSubset, all.df$patientid[slice])  # note: you can change 
 #ggsave("../results/summary_response_example.png")
 ```
 
-"hairball" shows variance in the range that people used to rate their health. try likert?
+Uh oh. The "hairball" shows variance in the range that people used to rate their health. It looks like some people really use the full 0-100 scale, and others stick pretty close to the first number they wrote down. I can't visually pick out any meaningful trends, so we shouldn't get our hopes up that there's anything to find in this data.
+
+Maybe we'll be safe if we use the Likert scale responses, because they're a smaller range (1-6)?
 
 ```{r summarystats_likert}
 ## same as above but with the likert
@@ -132,13 +126,13 @@ likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
 time.likert.df <- all.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
 
-likert.trend <- plot.overall.trend(meltedLikert)
-likert.box <- plot.boxplot(meltedLikert)
-ggsave("../results/summary_likert.png", arrangeGrob(likert.trend, likert.box))
+(likert.trend <- plot.overall.trend(meltedLikert))
+(likert.box <- plot.boxplot(meltedLikert))
+#ggsave("../results/summary_likert.png", arrangeGrob(likert.trend, likert.box))
 
 ```
 
-still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
+Still a hairball, still too much variance in how people rated their response. I think we're going to have to just go with the binary response I made in Excel, maybe scaling somehow as percent improvement respective to each patient.
 
 ```{r cleaning_coderesponse, eval=FALSE}
 ## NOTE: THE FOLLOWING TWO FUNCTIONS ARE CODED IN BAD FORM... I HARD CODED THE TIME VARIABLES TO USE, SO YOU'LL HAVE TO CHANGE THOSE IF YOU WANT TO USE A DIFFERENT TIME SCALE (LIKERT, ETC)
@@ -220,19 +214,19 @@ code.progress <- function(row){
   }
 }
 
-all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
-all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
-all.df$codedprog <- apply(all.df, 1, code.progress)
+#all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
+#all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
+#all.df$codedprog <- apply(all.df, 1, code.progress)
 
-all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
-all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
-all.df$codedprog.likert <- apply(all.df, 1, code.progress)
+#all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
+#all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
+#all.df$codedprog.likert <- apply(all.df, 1, code.progress)
 
 #write.csv(all.df, file = "./data/prp_tendon_cleaned2_reshaped_delim_20170305.csv")
 ```
 
 ```{r cleaning_pctresponse, eval=FALSE}
-## note: I gave up on this section and just did it in excel! c:
+## note: I gave up on this section and just did it in excel! :)
 
 ## BASELINE SUBTRACTION
 baseline.subtraction <- function(row){
@@ -274,33 +268,35 @@ baseline.subtraction <- function(row){
 
 ```
 
+Let's look at what scaling/normalizing patients to their own baseline looks like. 
+
 ```{r summarystats_cleaneddata}
 # baseline-subtracted 0-100 scaled values
 baselinecols <- c('baseline0', 'baseline6', 'baseline12', 'baseline26', 'baseline52')
 baseline.df <- all.df[, c('patientid',baselinecols,'prpcode')]
 meltedBaseline <- melt(as.data.frame(baseline.df), id=c('patientid','prpcode'))
 
-baseline.trend <- plot.overall.trend(meltedBaseline)
-baseline.box <- plot.boxplot(meltedBaseline)
-ggsave("../results/summary_baseline.png", arrangeGrob(baseline.trend, baseline.box))
+(baseline.trend <- plot.overall.trend(meltedBaseline))
+(baseline.box <- plot.boxplot(meltedBaseline))
+#ggsave("../results/summary_baseline.png", arrangeGrob(baseline.trend, baseline.box))
 
 # baseline-subtracted pct scaled values
 baselinepctcols <- c('pct.base0', 'pct.base6', 'pct.base12', 'pct.base26', 'pct.base52')
 baselinepct.df <- all.df[, c('patientid',baselinepctcols,'prpcode')]
 meltedBaselinePct <- melt(as.data.frame(baselinepct.df), id=c('patientid','prpcode'))
 
-pct.trend <- plot.overall.trend(meltedBaselinePct)
-pct.box <- plot.boxplot(meltedBaselinePct)
-ggsave("../results/summary_pct.png", arrangeGrob(pct.trend, pct.box))
+(pct.trend <- plot.overall.trend(meltedBaselinePct))
+(pct.box <- plot.boxplot(meltedBaselinePct))
+#ggsave("../results/summary_pct.png", arrangeGrob(pct.trend, pct.box))
 
 # baseline-subtracted likert
 baselinelikertcols <- c('baseline.likert6','baseline.likert12','baseline.likert26','baseline.likert52')
 baselinelikert.df <- all.df[, c('patientid',baselinelikertcols,'prpcode')]
 meltedBaselineLikert <- melt(as.data.frame(baselinelikert.df), id=c('patientid','prpcode'))
 
-base.likert.trend <- plot.overall.trend(meltedBaselineLikert)
-base.likert.box <- plot.boxplot(meltedBaselineLikert)
-ggsave("../results/summary_baselikert.png", arrangeGrob(base.likert.trend, base.likert.box))
+(base.likert.trend <- plot.overall.trend(meltedBaselineLikert))
+(base.likert.box <- plot.boxplot(meltedBaselineLikert))
+#ggsave("../results/summary_baselikert.png", arrangeGrob(base.likert.trend, base.likert.box))
 
 
 # baseline-subtracted likert
@@ -308,12 +304,16 @@ pctlikertcols <- c('pct.likert0', 'pct.likert6', 'pct.likert12', 'pct.likert26',
 pctlikert.df <- all.df[, c('patientid',pctlikertcols,'prpcode')]
 meltedPctLikert <- melt(as.data.frame(pctlikert.df), id=c('patientid','prpcode'))
 
-pct.likert.trend <- plot.overall.trend(meltedPctLikert)
-pct.likert.box <- plot.boxplot(meltedPctLikert)
-ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.likert.box))
+(pct.likert.trend <- plot.overall.trend(meltedPctLikert))
+(pct.likert.box <- plot.boxplot(meltedPctLikert))
+#ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.likert.box))
 
 
 ```
+
+Ooowhee, look at those boxplots. I think this pretty much puts the nail in the coffin -- we're not going to be able to get anything out of this.
+
+Let's try anyway!
 
 ```{r lasso}
 ##
@@ -349,6 +349,7 @@ x <- as.matrix(data.frame(lasso.df$age, lasso.df$duration_months, xfactors))
 y <- as.factor(lasso.df$codedprog)
 
 # Split into train and test, just doing two-fold I guess
+x <- x[sample(nrow(x)),] # shuffle data
 test <- sample(1:nrow(x), nrow(x)/2)
 train <- (-test)
 y.test <- y[test]
@@ -357,10 +358,10 @@ y.test <- y[test]
 grid <- 10^seq(5,-2,length=100)
 
 # finally, fit the lasso model
-lasso.mod <- glmnet(x[train,], y[train], alpha=1, family="binomial", lambda=grid)
+lasso.mod <- glmnet(x[train,], as.factor(y[train]), alpha=1, family="binomial", lambda=grid)
 
 # visualize results of the lasso, note coefficient paths
-jpeg('../results/lasso_coefficientpaths.jpg')
+jpeg('../results/lasso_coefficientpaths2.jpg')
 plot(lasso.mod,xvar="lambda",col=c(1:ncol(x)),lwd=c(1,2,3))
 legend('topright',colnames(x),col=c(1:ncol(x)),bty='n',lwd=c(1,2,3))
 coef(lasso.mod)[, 10]
@@ -373,17 +374,22 @@ plot(cv.out)
 bestlam <- cv.out$lambda.min
 
 # fit the model with the best lambda from training to the test data and check the regression performance
-lasso.pred <- predict(lasso.mod,s=bestlam,newx=x[test,])
-mean((lasso.pred-y.test)^2) # hmm, how to measure performance with a binary outcome...
+lasso.probs <- predict(lasso.mod,s=bestlam,type="response",newx=x[test,])
+
+lasso.pred <- rep("0",length(test))
+lasso.pred[lasso.probs>.5]="1"
+table(lasso.pred,y.test)
 
 out <- glmnet(x, y, alpha=1, family="binomial", lambda=grid)
-lasso.coef <- predict(out,type="coefficients",s=bestlam)[1:15,]
+lasso.coef <- predict(out,type="coefficient",s=bestlam)[1:15,]
 lasso.coef
 lasso.coef[lasso.coef!=0]
 ```
 
-coefficients suggest injection site, specifically dxcode2 (lateral epicondylosis) and dxcode6 (proximal hamstring tendonosis), and gender are predictive.
+I get different results each time I run this code, based on my folds I think. The folds definitely aren't set up ideally (which I think should be stratefied maybe using library(caret)) so that is probably also affecting the robustness of the model fitting. If I have different subsets getting divided into the folds unequally, then I'd imagine that affects which coefficients are predictive.
+Anyway, it seems the most informative coefficients are injection site, cortisone treatment, and gender. I'm not sure how "real" that is, though, since the results change each time. I'm surprised age doesn't factor here. There were also a number of other variables that might have been useful in modeling, but had too many NA or weren't easily coded, especially considering all the data cleaning on the response variables I did.
 
+Lastly, let's look at the timecourse analysis and see if we can pick apart any significant trends over time.
 
 ```{r timepoint}
 ##
@@ -420,11 +426,16 @@ do.timecourse <- function(df,subset,timecourse){
 timecourse.num <- c(0,6,12,26,52)  # timecourse values for the 0-100 scale
 likert.time <- c(6,12,26,52)  # timecourse values for the likert scale
 
-baseline.timecourse <- do.timecourse(all.df, baselinecols, timecourse.num)
-sig_results <- qvalueObj(baseline.timecourse)
+(timecourse.prp <- do.timecourse(all.df, timecols, timecourse.num))
 
-baselinepct.timecourse <- do.timecourse(all.df, baselinepctcols, timecourse.num)
-baselikert.timecourse <- do.timecourse(all.df, baselinelikertcols, likert.time)
+(baseline.timecourse.prp <- do.timecourse(all.df, baselinecols, timecourse.num))
+(baseline.timecourse.prp0 <- do.timecourse(subset(all.df, prpcode == 0), baselinecols, timecourse.num))
+(baseline.timecourse.prp1 <- do.timecourse(subset(all.df, prpcode == 1), baselinecols, timecourse.num))
+(baseline.timecourse.prp2 <- do.timecourse(subset(all.df, prpcode == 2), baselinecols, timecourse.num))
 
+
+(baselinepct.timecourse <- do.timecourse(all.df, baselinepctcols, timecourse.num))
+(baselikert.timecourse <- do.timecourse(all.df, baselinelikertcols, likert.time))
 
 ```
+
