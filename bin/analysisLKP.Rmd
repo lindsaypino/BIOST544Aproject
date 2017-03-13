@@ -313,25 +313,35 @@ ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.lik
 #lassocols <- c('codedprog', 'prpcode', 'injurytype', 'dxcode', 'pt', 'cortisone_yn','nitropatch', 'surgery', 'coldlaser', 'massage', 'acupuncture', 'chiropractor', 'age','race', 'gender', 'athlete_status', 'primary_sport', 'duration_months')
 lassocols <- c('codedprog', 'prpcode', 'dxcode', 'pt', 'cortisone_yn', 'age', 'gender', 'duration_months')
 lasso.df <- all.df[,lassocols]
-lasso.df <- lasso.df[complete.cases(lasso.df),]
-lasso.matrix <- as.matrix(lasso.df)
-lasso.matrix <- lasso.matrix[,-1]  # remove outcome column
-outcome <- lasso.df$codedprog  # create outcome vector
+
+lasso.df$codedprog <- as.factor(lasso.df$codedprog)
+lasso.df$prpcode <- as.factor(lasso.df$prpcode)
+lasso.df$dxcode <- as.factor(lasso.df$dxcode)
+lasso.df$pt <- as.factor(lasso.df$pt)
+lasso.df$cortisone_yn <- as.factor(lasso.df$cortisone_yn)
+lasso.df$age <- as.numeric(lasso.df$age)
+lasso.df$gender <- as.factor(lasso.df$gender)
+lasso.df$duration_months <- as.numeric(lasso.df$duration_months)
+
+xfactors <- model.matrix(codedprog ~ prpcode + dxcode + pt + cortisone_yn + gender, data=lasso.df)#[, -1]
+x <- as.matrix(data.frame(lasso.df$age, lasso.df$duration_months, xfactors))
+
+y <- as.factor(lasso.df$codedprog)  # create outcome vector
 
 # Split into train and test
-train=sample(1:nrow(lasso.matrix), nrow(lasso.matrix)/2)
+train=sample(1:nrow(x), nrow(x)/2)
 test=(-train)
-outcome.test=outcome[test]
+y.test=outcome[y]
 
 # make a grid of lambda values to test over
 grid=10^seq(5,-2,length=100)
 
 # finally, fit the lasso model
-lasso.mod <- glmnet(lasso.matrix[train,], outcome[train], alpha=1, family="binomial", lambda=grid)
+lasso.mod <- glmnet(x[train,], y[train], alpha=1, family="binomial", lambda=grid)
 
 # visualize results of the lasso, note shrinkage
 plot(lasso.mod,xvar="lambda",col=c(1:ncol(x)),lwd=c(1,2,3))
-legend('topright',colnames(lasso.matrix),col=c(1:ncol(lasso.matrix)),bty='n',lwd=c(1,2,3))
+legend('topright',colnames(x),col=c(1:ncol(x)),bty='n',lwd=c(1,2,3))
 
 par(mfrow=c(1,2))
 plot(ridge.mod,xvar="lambda",col=c(1:ncol(lasso.matrix)))
