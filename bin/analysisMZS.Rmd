@@ -8,6 +8,8 @@ output: html_document
 ```{r}
 install.packages("dplyr")
 library(dplyr)  # lkp: to use the %>% and the drop_na()
+library(tidyr)
+library(ggplot)
 
 
 ## Subset for the variables I know
@@ -49,8 +51,14 @@ do.one <- function(outcome, label){
   print(outcome)
   return(mean(outcome[perm.label == 2]) - mean(outcome[perm.label == 1])) # lkp: stupid R
 }
+```
+
+```{r}
 
 do.one.v2 <- function(outcome, label){
+  
+  print(outcome)
+  print(label)
   
   # permute the data by shuffling the treatment labels
   perm <- sample(1:length(label), replace = FALSE)
@@ -66,7 +74,7 @@ do.one.v2 <- function(outcome, label){
     group_by(as.factor(tx)) %>% 
     summarise(prop.inf = mean(outcome))
   
-  print(perm.improvement.by.prptype)
+  #print(perm.improvement.by.prptype)
 
   # ...finally find the difference in response proportion between the two PRP groups
   perm.prop.diff <- perm.improvement.by.prptype$prop.inf[2] - perm.improvement.by.prptype$prop.inf[1]
@@ -77,14 +85,16 @@ do.one.v2 <- function(outcome, label){
 }
 
 sampling.dist <- with(submz.df,
-                      replicate(1e1, do.one.v2(pct.likert52, prptype)))
+                      replicate(1e1, do.one.v2(codedprog.likert, prptype)))
 
 ggplot(data.frame(perm.prop.diff = sampling.dist), aes(x = perm.prop.diff, y=..density..)) +
   geom_density() + 
   geom_vline(xintercept = prop.diff, color = "red")
 
 mean(sampling.dist > prop.diff)
+```
 
+```{r}
 ## Regression before PS Score weighting
 prptrtraw <- lm(pct.likert52 ~ prponly_num + pct.base52 + age + gender + duration_months + dxcode + time52pda + time52pse, data = submz.df)
                 summary(prptrtraw)
