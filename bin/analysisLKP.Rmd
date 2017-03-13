@@ -17,62 +17,66 @@ library(ggplot2)
 library(dplyr)
 library(data.table)
 library(reshape2)
-source("http://bioconductor.org/biocLite.R")  # for timecourse analysis
-biocLite("edge")  # for timecourse analysis
+#source("http://bioconductor.org/biocLite.R")  # for timecourse analysis
+#biocLite("edge")  # for timecourse analysis
 library(edge)  # for timecourse analysis
+library(splines)
 library(gridExtra)
+library(glmnet)  # for lasso
 
 dir <- getwd()
 setwd(dir)
-#all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim.csv")
-all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")
+all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")  # data frame cleaned and 'normalized' in excel
 ```
 
-```{r dataframe_readin}
-## Subset for the variables I know
-cols <- colnames(all.df)
-keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
-subset.df <- all.df[, keepcols]
-# note: missing prptype for pt AGFT199 -- discarded in excel
-```
+I'm starting by just making some summary statistics and plots for the data, in order to get a feel for what I'm working with.
 
 ```{r summarystats_meta}
 ## Missingness by feature, ie how many N/As per column
-apply(subset.df, 2, function(x){sum(is.na(x))}) 
-complete <- subset.df %>% complete.cases()
+apply(all.df, 2, function(x){sum(is.na(x))}) 
+complete <- all.df %>% complete.cases()
 mean(complete)  ## proportion of cases complete
-length(unique(subset.df$patientid))  ## total unique patients
+length(unique(all.df$patientid))  ## total unique patients
 
 ## subset for metadata features
-meta.df <- subset.df %>% select(patientid, treatment, age, race, gender_num, duration_months)  # subset for features we'll be using 
+meta.df <- all.df %>% select(patientid, treatment, age, race, gender_num, duration_months)  # subset for features we'll be using 
 apply(meta.df, 2, function(x){sum(is.na(x))}) 
 complete <- meta.df %>% complete.cases()
 
 ## Summary statistics
-ages <- subset.df %>% 
-  group_by(as.factor(gender_num)) %>% 
-  summarise(mean(duration_months))
+hist(all.df$age)
+hist(all.df$duration_months)
 
-hist(subset.df$age)
-hist(subset.df$duration_months)
-
-median(na.omit(subset.df$duration_months))
-range(na.omit(subset.df$duration_months))
+median(na.omit(all.df$duration_months))
+range(na.omit(all.df$duration_months))
 
 ```
 
-ages look nice, almost normal distribution.
+Unfortunately it looks like there's a lot of missingness in the data. For the metadata that might be useful in modeling, the ages look nice, almost a normal distribution. The duration in study median is at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
 
-duration in study median at 17 months, min is 2 months and max is 600 months?! that's 50 years lol gotta be a mistake...
+Right off the bat let's clean up some of the variables by coding them.
 
 ```{r cleaning_codeprptype}
 ## code prptype as a factor
 all.df$prptype <- as.character(all.df$prptype)
-all.df$prpcode[all.df$prptype == "cascade"] <- 1
-all.df$prpcode[all.df$prptype == "biomet"] <- 2
-all.df$prpcode[all.df$prptype == "abi"] <- 0
+all.df$prpcode[all.df$prptype == "cascade"] <- 0
+all.df$prpcode[all.df$prptype == "biomet"] <- 1
+all.df$prpcode[all.df$prptype == "abi"] <- 2
 all.df$prpcode <- as.factor(all.df$prpcode)
+
+## code pt
+all.df$pt <- as.character(all.df$pt)
+all.df$pt[all.df$pt == "no"] <- 0
+all.df$pt[all.df$pt == "yes"] <- 1
+
+## code cortisone_yn
+all.df$cortisone_yn <- as.character(all.df$cortisone_yn)
+all.df$cortisone_yn[all.df$cortisone_yn == "no"] <- 0
+all.df$cortisone_yn[all.df$cortisone_yn == "yes"] <- 1
+
 ```
+
+Now let's take a look at the response variables we have. We already know there's going to be missingness from the summary statistics above, but I want to see the trends over time (as lines and as boxplots) to see if there's anything  interesting there.
 
 ```{r summarystats_notlikert}
 # make a line plot to visualize trend over time
@@ -91,8 +95,8 @@ plot.boxplot <- function(df){
 plot.slice.trend <- function(df, slice){
   ggplot(subset(df, patientid %in% slice), 
          aes(x=variable,y=value)) +
-    geom_point(aes(color=patientid), size=3) +
-    stat_summary(aes(group=patientid, color=patientid), fun.y=mean, geom="line")
+    geom_point(aes(color=prpcode), size=3) +
+    stat_summary(aes(group=patientid, color=prpcode), fun.y=mean, geom="line")
 }
 
 ## subset the data for the 'easy' variables of patientid, timepoints, and the coded prp type
@@ -102,15 +106,19 @@ time.prptype.df <- all.df[, c('patientid',timecols,'prpcode')]
 ## plot the trends over time for each patient (the other scale, not the likert scale)
 meltedSubset <- melt(as.data.frame(time.prptype.df), id=c('patientid','prpcode'))
 
-response.trend <- plot.overall.trend(meltedSubset)
-response.box <- plot.boxplot(meltedSubset)
-ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
+(response.trend <- plot.overall.trend(meltedSubset))
+(response.box <- plot.boxplot(meltedSubset))
+#ggsave("../results/summary_response.png", arrangeGrob(response.trend, response.box))
 
 ## plot a slice of the dataframe to visualize it better
-plot.slice.trend(baseline.df, baseline.df$patientid[1:10])  # note: you can change this "[1:10]" to however many or few you want! 
+slice <- c(1,2,3,20,21,22,130,131,132)
+plot.slice.trend(meltedSubset, all.df$patientid[slice])  # note: you can change this "[1:10]" to however many or few you want! 
+#ggsave("../results/summary_response_example.png")
 ```
 
-"hairball" shows variance in the range that people used to rate their health. try likert?
+Uh oh. The "hairball" shows variance in the range that people used to rate their health. It looks like some people really use the full 0-100 scale, and others stick pretty close to the first number they wrote down. I can't visually pick out any meaningful trends, so we shouldn't get our hopes up that there's anything to find in this data.
+
+Maybe we'll be safe if we use the Likert scale responses, because they're a smaller range (1-6)?
 
 ```{r summarystats_likert}
 ## same as above but with the likert
@@ -118,13 +126,13 @@ likertcols <- c('time6lpt', 'time12lpt', 'time26lpt', 'time52lpt')
 time.likert.df <- all.df[, c('patientid',likertcols,'prpcode')]
 meltedLikert <- melt(as.data.frame(time.likert.df), id=c('patientid','prpcode'))
 
-likert.trend <- plot.overall.trend(meltedLikert)
-likert.box <- plot.boxplot(meltedLikert)
-ggsave("../results/summary_likert.png", arrangeGrob(likert.trend, likert.box))
+(likert.trend <- plot.overall.trend(meltedLikert))
+(likert.box <- plot.boxplot(meltedLikert))
+#ggsave("../results/summary_likert.png", arrangeGrob(likert.trend, likert.box))
 
 ```
 
-still a hairball, still too much variance in how people rated their response. think we're going to have to just go with the binary response, maybe scaling somehow as percent improvement respective to each patient.
+Still a hairball, still too much variance in how people rated their response. I think we're going to have to just go with the binary response I made in Excel, maybe scaling somehow as percent improvement respective to each patient.
 
 ```{r cleaning_coderesponse, eval=FALSE}
 ## NOTE: THE FOLLOWING TWO FUNCTIONS ARE CODED IN BAD FORM... I HARD CODED THE TIME VARIABLES TO USE, SO YOU'LL HAVE TO CHANGE THOSE IF YOU WANT TO USE A DIFFERENT TIME SCALE (LIKERT, ETC)
@@ -206,19 +214,19 @@ code.progress <- function(row){
   }
 }
 
-all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
-all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
-all.df$codedprog <- apply(all.df, 1, code.progress)
+#all.df$firsttimept <- apply(all.df, 1, find.first.time.point)
+#all.df$lasttimept <- apply(all.df, 1, find.last.time.point)
+#all.df$codedprog <- apply(all.df, 1, code.progress)
 
-all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
-all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
-all.df$codedprog.likert <- apply(all.df, 1, code.progress)
+#all.df$firsttimept.likert <- apply(all.df, 1, find.first.time.point)
+#all.df$lasttimept.likert <- apply(all.df, 1, find.last.time.point)
+#all.df$codedprog.likert <- apply(all.df, 1, code.progress)
 
 #write.csv(all.df, file = "./data/prp_tendon_cleaned2_reshaped_delim_20170305.csv")
 ```
 
 ```{r cleaning_pctresponse, eval=FALSE}
-## note: I gave up on this section and just did it in excel! c:
+## note: I gave up on this section and just did it in excel! :)
 
 ## BASELINE SUBTRACTION
 baseline.subtraction <- function(row){
@@ -260,33 +268,35 @@ baseline.subtraction <- function(row){
 
 ```
 
+Let's look at what scaling/normalizing patients to their own baseline looks like. 
+
 ```{r summarystats_cleaneddata}
 # baseline-subtracted 0-100 scaled values
 baselinecols <- c('baseline0', 'baseline6', 'baseline12', 'baseline26', 'baseline52')
 baseline.df <- all.df[, c('patientid',baselinecols,'prpcode')]
 meltedBaseline <- melt(as.data.frame(baseline.df), id=c('patientid','prpcode'))
 
-baseline.trend <- plot.overall.trend(meltedBaseline)
-baseline.box <- plot.boxplot(meltedBaseline)
-ggsave("../results/summary_baseline.png", arrangeGrob(baseline.trend, baseline.box))
+(baseline.trend <- plot.overall.trend(meltedBaseline))
+(baseline.box <- plot.boxplot(meltedBaseline))
+#ggsave("../results/summary_baseline.png", arrangeGrob(baseline.trend, baseline.box))
 
 # baseline-subtracted pct scaled values
 baselinepctcols <- c('pct.base0', 'pct.base6', 'pct.base12', 'pct.base26', 'pct.base52')
 baselinepct.df <- all.df[, c('patientid',baselinepctcols,'prpcode')]
 meltedBaselinePct <- melt(as.data.frame(baselinepct.df), id=c('patientid','prpcode'))
 
-pct.trend <- plot.overall.trend(meltedBaselinePct)
-pct.box <- plot.boxplot(meltedBaselinePct)
-ggsave("../results/summary_pct.png", arrangeGrob(pct.trend, pct.box))
+(pct.trend <- plot.overall.trend(meltedBaselinePct))
+(pct.box <- plot.boxplot(meltedBaselinePct))
+#ggsave("../results/summary_pct.png", arrangeGrob(pct.trend, pct.box))
 
 # baseline-subtracted likert
 baselinelikertcols <- c('baseline.likert6','baseline.likert12','baseline.likert26','baseline.likert52')
 baselinelikert.df <- all.df[, c('patientid',baselinelikertcols,'prpcode')]
 meltedBaselineLikert <- melt(as.data.frame(baselinelikert.df), id=c('patientid','prpcode'))
 
-base.likert.trend <- plot.overall.trend(meltedBaselineLikert)
-base.likert.box <- plot.boxplot(meltedBaselineLikert)
-ggsave("../results/summary_baselikert.png", arrangeGrob(base.likert.trend, base.likert.box))
+(base.likert.trend <- plot.overall.trend(meltedBaselineLikert))
+(base.likert.box <- plot.boxplot(meltedBaselineLikert))
+#ggsave("../results/summary_baselikert.png", arrangeGrob(base.likert.trend, base.likert.box))
 
 
 # baseline-subtracted likert
@@ -294,66 +304,138 @@ pctlikertcols <- c('pct.likert0', 'pct.likert6', 'pct.likert12', 'pct.likert26',
 pctlikert.df <- all.df[, c('patientid',pctlikertcols,'prpcode')]
 meltedPctLikert <- melt(as.data.frame(pctlikert.df), id=c('patientid','prpcode'))
 
-pct.likert.trend <- plot.overall.trend(meltedPctLikert)
-pct.likert.box <- plot.boxplot(meltedPctLikert)
-ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.likert.box))
+(pct.likert.trend <- plot.overall.trend(meltedPctLikert))
+(pct.likert.box <- plot.boxplot(meltedPctLikert))
+#ggsave("../results/summary_pctlikert.png", arrangeGrob(pct.likert.trend, pct.likert.box))
 
 
 ```
+
+Ooowhee, look at those boxplots. I think this pretty much puts the nail in the coffin -- we're not going to be able to get anything out of this.
+
+Let's try anyway!
 
 ```{r lasso}
-#subset the dataframe for the lasso features and response variables
+##
+## Lasso regression using metadata as potential contributing variables
+##
 
+# subset the dataframe for the lasso features and response variables
+#lassocols <- c('codedprog', 'prpcode', 'injurytype', 'dxcode', 'pt', 'cortisone_yn','nitropatch', 'surgery', 'coldlaser', 'massage', 'acupuncture', 'chiropractor', 'age','race', 'gender', 'athlete_status', 'primary_sport', 'duration_months')
+# couldn't use all the variables above, too much NA
+lassocols <- c('codedprog', 'prpcode', 'dxcode', 'pt', 'cortisone_yn', 'age', 'gender_num', 'duration_months')
+lasso.df <- all.df[,lassocols]
+lasso.df <- subset(lasso.df, prpcode != 2)
+lasso.df <- na.omit(lasso.df)
+
+# convert everything to factors or numeric as necessary
+lasso.df$codedprog <- as.factor(lasso.df$codedprog)
+lasso.df$prpcode <- as.factor(lasso.df$prpcode)
+lasso.df$dxcode <- as.factor(lasso.df$dxcode)
+lasso.df$pt <- as.factor(lasso.df$pt)
+lasso.df$cortisone_yn <- as.factor(lasso.df$cortisone_yn)
+lasso.df$age <- as.numeric(lasso.df$age)
+lasso.df$gender_num <- as.factor(lasso.df$gender_num)
+lasso.df$duration_months <- as.numeric(lasso.df$duration_months)
+#lasso.df$time0 <- as.numeric(lasso.df$time0)
+
+# expand the factors to dummy variables
+xfactors <- model.matrix(codedprog ~ prpcode + dxcode + pt + cortisone_yn + gender_num, data=lasso.df)[, -1]
+
+# join the dummy variables with the continuous variables
+x <- as.matrix(data.frame(lasso.df$age, lasso.df$duration_months, xfactors))
+
+# create outcome vector
+y <- as.factor(lasso.df$codedprog)
+
+# Split into train and test, just doing two-fold I guess
+x <- x[sample(nrow(x)),] # shuffle data
+test <- sample(1:nrow(x), nrow(x)/2)
+train <- (-test)
+y.test <- y[test]
+
+# make a grid of lambda values to test over
+grid <- 10^seq(5,-2,length=100)
+
+# finally, fit the lasso model
+lasso.mod <- glmnet(x[train,], as.factor(y[train]), alpha=1, family="binomial", lambda=grid)
+
+# visualize results of the lasso, note coefficient paths
+jpeg('../results/lasso_coefficientpaths2.jpg')
+plot(lasso.mod,xvar="lambda",col=c(1:ncol(x)),lwd=c(1,2,3))
+legend('topright',colnames(x),col=c(1:ncol(x)),bty='n',lwd=c(1,2,3))
+coef(lasso.mod)[, 10]
+
+# now pick the best lambda value for the train data
+set.seed(1)
+cv.out <- cv.glmnet(x[train,],y[train],alpha=1,family="binomial")
+jpeg('../results/lasso_bestlambda.jpg')
+plot(cv.out)
+bestlam <- cv.out$lambda.min
+
+# fit the model with the best lambda from training to the test data and check the regression performance
+lasso.probs <- predict(lasso.mod,s=bestlam,type="response",newx=x[test,])
+
+lasso.pred <- rep("0",length(test))
+lasso.pred[lasso.probs>.5]="1"
+table(lasso.pred,y.test)
+
+out <- glmnet(x, y, alpha=1, family="binomial", lambda=grid)
+lasso.coef <- predict(out,type="coefficient",s=bestlam)[1:15,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
 ```
+
+I get different results each time I run this code, based on my folds I think. The folds definitely aren't set up ideally (which I think should be stratefied maybe using library(caret)) so that is probably also affecting the robustness of the model fitting. If I have different subsets getting divided into the folds unequally, then I'd imagine that affects which coefficients are predictive.
+Anyway, it seems the most informative coefficients are injection site, cortisone treatment, and gender. I'm not sure how "real" that is, though, since the results change each time. I'm surprised age doesn't factor here. There were also a number of other variables that might have been useful in modeling, but had too many NA or weren't easily coded, especially considering all the data cleaning on the response variables I did.
+
+Lastly, let's look at the timecourse analysis and see if we can pick apart any significant trends over time.
 
 ```{r timepoint}
 ##
 ## TIMECOURSE ANALYSIS
 ##
-## For now I'm not working much on this, 
-## I'll have to think about it a little more. Namely, the package was 
-## designed to be used on data that has many genes, and finding the genes
-## that trend significantly over time. We don't have genes here, just
-## the two groups. Maybe we don't need to do the significance analysis then?
+# Too many NA's, not sure we can get anything from this
+
+do.timecourse <- function(df,subset,timecourse){
+  ## prepare matrix for modeling
+  matrixSubset <- as.matrix(df[,subset])
+  colnames(matrixSubset) <- timecourse
+  
+  ## remove na, keeping only complete timecourses
+  matrixSubset.complete <- matrixSubset[complete.cases(matrixSubset),]
+  
+  ## creating full and null models
+  de_obj <- build_study(data=matrixSubset.complete, tme=timecourse, sampling = "timecourse")
+  full_matrix <- fullMatrix(de_obj)
+  null_matrix <- nullMatrix(de_obj)
+  prpcode.expr <- exprs(de_obj)  # seems to be the same as the expression matrix
+  
+  ## fitting the data
+  ef_obj <- fit_models(de_obj, stat.type = "odp")
+  alt_fitted <- fitFull(ef_obj)
+  null_fitted <- fitNull(ef_obj)
+  
+  ## significance analysis
+  #de_odp <- odp(ef_obj, bs.its = 50, verbose = FALSE, n.mods = 50)  # optimal discovery procedure (odp) doesn't work
+  de_lrt <- lrt(de_obj, nullDistn = "normal")  # likelihood ratio test does work
+  
+  return(de_lrt)
+}
+
+timecourse.num <- c(0,6,12,26,52)  # timecourse values for the 0-100 scale
+likert.time <- c(6,12,26,52)  # timecourse values for the likert scale
+
+(timecourse.prp <- do.timecourse(all.df, timecols, timecourse.num))
+
+(baseline.timecourse.prp <- do.timecourse(all.df, baselinecols, timecourse.num))
+(baseline.timecourse.prp0 <- do.timecourse(subset(all.df, prpcode == 0), baselinecols, timecourse.num))
+(baseline.timecourse.prp1 <- do.timecourse(subset(all.df, prpcode == 1), baselinecols, timecourse.num))
+(baseline.timecourse.prp2 <- do.timecourse(subset(all.df, prpcode == 2), baselinecols, timecourse.num))
 
 
-## prepare matrix for modeling
-matrixSubset <- as.matrix(as.data.frame(lapply(time.prptype.df[,timecols], as.numeric)))
-matrixSubset <- as.matrix(as.data.frame(lapply(time.likert.df[,timecols], as.numeric)))
-
-## creating full and null models
-library(splines)
-timevariable <- c(0,6,12,26,52)
-colnames(matrixSubset) <- timevariable
-de_obj <- build_study(data = matrixSubset, tme=timevariable, sampling = "timecourse")
-full_matrix <- fullMatrix(de_obj)
-null_matrix <- nullMatrix(de_obj)
-prpcode.expr <- exprs(de_obj)  # seems to be the same as the expression matrix
-
-
-## fitting the data
-
-ef_obj <- fit_models(de_obj, stat.type = "odp")
-alt_fitted <- fitFull(ef_obj)
-null_fitted <- fitNull(ef_obj)
-
-
-## significance analysis
-
-
-#de_odp <- odp(ef_obj, bs.its = 50, verbose = FALSE, n.mods = 50)  # optimal discovery procedure (odp) doesn't work
-de_lrt <- lrt(de_obj, nullDistn = "normal")  # likelihood ratio test does work
-summary(de_lrt)
-
-sig_results <- qvalueObj(de_lrt)
-qvals <- sig_results$qvalues
-pvals <- sig_results$pvalues
-lfdr <- sig_results$lfdr
-pi0 <- sig_results$pi0
-
-
-# list of all significant genes at an FDr of 0.1
-fdr.level <- 0.1
-sigGenes <- qvals < fdr.level
+(baselinepct.timecourse <- do.timecourse(all.df, baselinepctcols, timecourse.num))
+(baselikert.timecourse <- do.timecourse(all.df, baselinelikertcols, likert.time))
 
 ```
+
