@@ -37,11 +37,12 @@ submz.df$prponly_num <- submz.df$prponly_num-1
     group_by(as.factor(prptype)) %>% 
     summarise(prop.inf = mean(lasttimept.likert)))
 
-(prop.diff <- improvement.by.prptype$prop.inf[1] - improvement.by.prptype$prop.inf[0])
+(prop.diff <- improvement.by.prptype$prop.inf[2] - improvement.by.prptype$prop.inf[1]) # lkp: R is stupid, it's base 1
 
 do.one <- function(outcome, label){
   perm.label <- sample(label)
-  return(mean(outcome[perm.label == 1]) - mean(outcome[perm.label == 0]))
+  #print(perm.label)
+  return(mean(outcome[perm.label == 2]) - mean(outcome[perm.label == 1])) # lkp: stupid R
 }
 
 sampling.dist <- with(submz.df,
