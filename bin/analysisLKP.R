@@ -5,21 +5,126 @@ library(dplyr)
 library(data.table)
 
 
-
 #
 # CREATION OF DATAFRAME AND PREPROCESSING
 #
 
 dir <- getwd()
 setwd(dir)
-all.df <- read.csv("./data/prp_tendon_cleaned2_reshaped_delim.csv")
+all.df <- read.csv("../data/prp_tendon_cleaned2_reshaped_delim_20170310.csv")
 
 ## Subset for the variables I know
 cols <- colnames(all.df)
-keepcols <- c(1,2,3,4,5,6,28,29,30,31,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58)
-subset.df <- all.df[, keepcols]
+keepcols <- c(1,2,3,4,5,6,7,8,9,10,11,12,18,19,20,21,22,28,29,30,31,32,33,34,36,37,38,40,41,42,43,44,45,46,49,50,52,53,55,56,57,58,59,71,72,73,74,75,80,81,82,83,84)
+submz.df <- all.df[, keepcols]
+subset(submz.df, treatment!="ABI")
+
 
 # note: missing prptype for pt AGFT199 -- discarded in excel
+
+##make prponly_num a binary variable
+submz.df$prponly_num <- submz.df$prponly_num-1 
+
+##Mean Difference before confounding
+
+(improvement.by.prptype <- submz.df %>% 
+    group_by(as.factor(prptype)) %>% 
+    summarise(prop.inf = mean(time52lpt)))
+
+(prop.diff <- improvement.by.prptype$prop.inf[1] - improvement.by.prptype$prop.inf[0])
+
+do.one <- function(outcome, label){
+  perm.label <- sample(label)
+  return(mean(outcome[perm.label == 1]) - mean(outcome[perm.label == 0]))
+}
+
+sampling.dist <- with(submz.df,
+                      replicate(1e4, do.one(pct.likert52, prptype)))
+
+ggplot(data.frame(perm.prop.diff = sampling.dist), aes(x = perm.prop.diff, y=..density..)) +
+  geom_density() + 
+  geom_vline(xintercept = prop.diff, color = "red")
+
+mean(sampling.dist > prop.diff)
+
+## Regression before PS Score weighting
+prptrtraw <- lm(pct.likert52 ~ prponly_num + pct.base52 + age + gender + duration_months + dxcode + time52pda + time52pse, data = submz.df)
+                summary(prptrtraw)
+                
+time0pda.ATE <- lm(time0pda ~ prponly_num, data=submz.df)
+time0pse.ATE <-lm(time0pse ~ prponly_num, data=submz.df)
+
+summary(time0pda.ATE)
+summary(time0pse.ATE)
+
+##Calculate the propensity score
+
+apply(submz.df, 2, function(x){sum(is.na(x))}) 
+complete <- submz.df %>% complete.cases()
+mean(complete)  ## proportion of cases complete
+length(unique(submz.df$patientid))  ## total unique patients
+
+
+all.ps <- glm(prponly_num ~ duration_months + gender + age + time0pda + time0pse + time0 + dxcode,
+              data = submz.df, family = binomial())
+summary(all.ps)
+
+##Attach PS to the data
+psvalue <- predict(all.ps, data=submz.df, type = "response")
+
+ggplot(data.frame(psvalue = psvalue), aes(x = psvalue, y = ..density..)) + geom_histogram()
+
+range(psvalue)
+
+trunc.propen <- psvalue %>% pmin(0.95) %>% pmax(0.05)
+
+
+##Look at ratio of enrollment probability
+npat <- nrow(submz.df)
+weights <- rep(0, npat)
+
+## for patients who were assigned to Cascade:
+representative.propen <- sum(submz.df$prponly_num) / npat
+actual.propen <- trunc.propen
+
+prptype.ind <- which(submz.df$prponly_num == 1)
+weights[prptype.ind] <- representative.propen/actual.propen[prptype.ind]
+weights[-prptype.ind]<- (1 - representative.propen)/(1- actual.propen[-prptype.ind])
+
+ggplot(data.frame(weights = weights), aes(x = weights, y = ..density..)) + geom_histogram()
+
+
+(cascade.prob.est <- with(submz.df,
+                          mean((weights*pct.likert52)[prptype.ind])))
+
+(biomet.prob.est <- with(submz.df,
+                          mean((weights*pct.likert52)[-prptype.ind])))
+
+(diff.est <- cascade.prob.est - biomet.prob.est)
+
+##Inverse weight and use propensity estimates in determining treatment labels
+
+do.one.propen <- function(outcome, propen){
+  n <- length(outcome)
+  label <- rbinom(n,1,propen)
+  
+  weights <- rep(0,n)  
+  representative <- mean(label)
+  actual <- propen
+  ind.t <- which(label == 1)
+  weights[ind.t] <- (representative/actual)[ind.t]
+  weights[-ind.t] <- ((1-representative)/(1-actual))[-ind.t]
+  
+  return(mean((weights*outcome)[ind.t]) - mean((weights*outcome)[-ind.t]))
+}
+
+rerandomized.diffs <- replicate(1e3, do.one.propen(submz.df$pct.likert52, trunc.propen))
+
+ggplot(data.frame(diffs = rerandomized.diffs), aes(x = diffs, y = ..density..)) +
+  geom_density() + 
+  geom_vline(xintercept = diff.est, color = "red")
+
+mean(rerandomized.diffs > diff.est)
 
 
 #
@@ -49,7 +154,7 @@ hist(subset.df$duration_months)
 ##will need write a function if no 52 week time piont available- to searh previos time 26, 12 or 6 for a value 
 
 improved.last <- function(x) {
-  if(x <= 4) {0} else {1}  } ##does R include NA in this data count?
+  if(x <= 4) {0} else {1}  } ##does R include NA in this data count? How do you tell R to lioke at one precvious?
 
 improved.52 <- sapply(subset.df$time52lpt,improved.last)
 
@@ -70,6 +175,19 @@ all.df$pse52.transf <- 100 - all.df$time52pse
 
 ##Standardize the outcomes scores
 
+##prp_dich <- funcion(all.df$prponly_num){
+  ##if(all.df$prponly_num==2) (prp_dich == 0)
+  ##if (all.df$prponly_num==1) (prp_dich == 1)
+  ##else NA
+##}
+  
+#all.df$prponly_num <- is.numeric(all.df$prponly_num)
+#all.df$prpcode[all.df$prponly_num == is.NA] <- is.NA
+#all.df$prpcode[all.df$prponly_num == 1] <- 1
+#all.df$prpcode[all.df$prponly_num == 2] <- 0
+#all.df$prpcode <- as.factor(all.df$prpcode) ##all listed as NA right now!
+
+
 
 all.df %>%
   mutate(score = (x - mean(x)) / sd(x))
@@ -78,7 +196,7 @@ all.df %>%
 
 all.ps <- glm(prponly_num ~ duration_m + gender_num + age + time0pda + time0pse + time0,
                  family = binomial(), data = all.df)
-summary(subset.ps)
+summary(all.ps)
 
 prs_df <- data.frame(pr_score = predict(all.ps, type = "response"),
                      prponly_num = all.df$model$prponly_num)
