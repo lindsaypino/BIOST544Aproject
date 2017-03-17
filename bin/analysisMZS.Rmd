@@ -6,10 +6,9 @@ output: html_document
 ---
 
 ```{r}
-install.packages("dplyr")
 library(dplyr)  # lkp: to use the %>% and the drop_na()
 library(tidyr)
-library(ggplot)
+library(ggplot2)
 
 
 ## Subset for the variables I know
@@ -93,9 +92,8 @@ ggplot(data.frame(perm.prop.diff = sampling.dist), aes(x = perm.prop.diff, y=..d
 mean(sampling.dist > prop.diff)
 
 
-
 ## Regression before PS Score weighting
-prptrtraw <- lm(pct.likert52 ~ prponly_num + pct.base52 + age + gender + duration_months + dxcode + time52pda + time52pse, data = submz.df)
+prptrtraw <- lm(lasttimept.likert ~ prponly_num + pct.base52 + age + gender + duration_months + dxcode + time52pda + time52pse, data = submz.df)
                 summary(prptrtraw)
                 
 time0pda.ATE <- lm(time0pda ~ prponly_num, data=submz.df)
@@ -112,7 +110,7 @@ mean(complete)  ## proportion of cases complete
 length(unique(submz.df$patientid))  ## total unique patients
 
 
-all.ps <- glm(prponly_num ~ duration_months + gender + age + time0pda + time0pse + time0 + dxcode,
+all.ps <- glm(prponly_num ~ duration_months + gender + age + time0pda + time0pse + firsttimept + dxcode,
               data = submz.df, family = binomial())
 summary(all.ps)
 
@@ -142,12 +140,13 @@ ggplot(data.frame(weights = weights), aes(x = weights, y = ..density..)) + geom_
 
 
 (cascade.prob.est <- with(submz.df,
-                          mean((weights*pct.likert52)[prptype.ind])))
+                          mean((weights*lasttimept.likert)[prptype.ind])))
 
 (biomet.prob.est <- with(submz.df,
-                          mean((weights*pct.likert52)[-prptype.ind])))
+                          mean((weights*lasttimept.likert)[-prptype.ind])))
 
 (diff.est <- cascade.prob.est - biomet.prob.est)
+
 
 ##Inverse weight and use propensity estimates in determining treatment labels
 
